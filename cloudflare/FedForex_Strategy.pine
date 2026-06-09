@@ -1,0 +1,299 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Fed Forex — ICT Strategy  v3.0  (Pine Script v5)
+// Strategies: 30m Sweep (77%) | Silver Bullet 2-stage (67-83%) | ODR (69-89%)
+// Entry / SL / T1 / T2 / T3 only — no auto-drawn blocks
+// WR shown per-pair per-strategy on every entry label
+// ═══════════════════════════════════════════════════════════════════════
+//@version=5
+strategy("Fed Forex — ICT Strategy v3",
+     overlay           = true,
+     pyramiding        = 1,
+     default_qty_type  = strategy.percent_of_equity,
+     default_qty_value = 1,
+     initial_capital   = 10000,
+     commission_type   = strategy.commission.percent,
+     commission_value  = 0.01,
+     slippage          = 2,
+     max_labels_count  = 200)
+
+// ─── INPUTS ───────────────────────────────────────────────────────────────
+g1 = "Strategies"
+use30m = input.bool(true, "30m Sweep + Displacement",  group=g1)
+useSB  = input.bool(true, "Silver Bullet 2-stage",     group=g1)
+useODR = input.bool(true, "ODR (Asia Range Sweep)",    group=g1)
+
+g2 = "Filters"
+wickMin = input.float(0.55, "Min Wick Ratio (30m/ODR)", step=0.05, minval=0.3, maxval=0.9, group=g2)
+fvgMult = input.float(0.15, "Min FVG Size  (× ATR20)",  step=0.05, minval=0.05, group=g2)
+
+g3 = "Display"
+showBias = input.bool(true, "Bias Table (top-right)", group=g3)
+showKZ   = input.bool(true, "Kill Zone shading",      group=g3)
+showAsia = input.bool(true, "Asia Range lines (ODR)", group=g3)
+
+// ─── PER-PAIR WIN RATES (from backtest v2, 60d Yahoo Finance) ─────────────
+// Used on entry labels so you instantly know the edge on THIS pair
+ticker = syminfo.ticker
+
+wr_SB2 = ticker == "GBPJPY"                    ? "83%" :
+         ticker == "EURUSD"                    ? "75%" :
+         ticker == "ETHUSD" or ticker == "ETHUSDPERP" or ticker == "ETHUSDT" ? "71%" :
+         ticker == "EURJPY"                    ? "67%" : "~70%"
+
+wr_ODR = ticker == "ETHUSD" or ticker == "ETHUSDPERP" or ticker == "ETHUSDT" ? "89%" :
+         ticker == "EURUSD"                    ? "80%" :
+         ticker == "GBPUSD"                    ? "69%" : "~75%"
+
+wr_30m = "77%"   // consistent across all 9 pairs
+
+// ─── HTF TREND  (EMA10 on H4 + H1) ───────────────────────────────────────
+[h4c, h4e] = request.security(syminfo.tickerid, "240", [close, ta.ema(close,10)], lookahead=barmerge.lookahead_off)
+[d1c, d1e] = request.security(syminfo.tickerid, "D",   [close, ta.ema(close,10)], lookahead=barmerge.lookahead_off)
+h1e        = ta.ema(close, 10)
+
+h4bull = h4c >= h4e
+d1bull = d1c >= d1e
+h1bull = close >= h1e
+h4h1ok = h4bull == h1bull
+
+// ─── IST TIME ─────────────────────────────────────────────────────────────
+_raw = hour(time,"UTC")*60 + minute(time,"UTC") + 330
+istM = _raw >= 1440 ? _raw - 1440 : _raw
+
+inLon  = istM >= 720  and istM <  930   // London  12:00–15:30 IST
+inNY   = istM >= 1020 and istM <  1260  // NY-AM   17:00–21:00 IST
+inW1   = istM >= 450  and istM <=  570  // SB W1   07:30–09:30 IST
+inW2   = istM >= 930  and istM <=  990  // SB W2   15:30–16:30 IST
+inW3   = istM >= 1170 and istM <= 1230  // SB W3   19:30–20:30 IST
+inSBw  = inW1 or inW2 or inW3
+inKZ   = inLon or inNY or inSBw
+inAsia = istM >= 30  and istM <=  330   // Asia    00:30–05:30 IST
+
+sbWinName = inW1 ? "W1 07:30" : inW2 ? "W2 15:30" : "W3 19:30"
+
+// ─── BAR HELPERS ──────────────────────────────────────────────────────────
+bR    = high - low
+body  = math.abs(close - open)
+lwp   = bR > 0 ? (math.min(open,close) - low)  / bR : 0.0
+uwp   = bR > 0 ? (high - math.max(open,close)) / bR : 0.0
+atr20 = ta.atr(20)
+
+rHi4  = ta.highest(high[1], 4)
+rLo4  = ta.lowest( low[1],  4)
+rMid5 = (ta.highest(high[1],5) + ta.lowest(low[1],5)) / 2.0
+
+// ─────────────────────────────────────────────────────────────────────────
+// STRATEGY A — 30m Sweep + Displacement   (WR 77%)
+// ─────────────────────────────────────────────────────────────────────────
+swpL = use30m and h4h1ok and h4bull
+     and inKZ[1]
+     and low[1]  < rLo4[1] and close[1] > rLo4[1] and close[1] < rMid5[1]
+     and lwp[1] >= wickMin
+
+swpS = use30m and h4h1ok and not h4bull
+     and inKZ[1]
+     and high[1] > rHi4[1] and close[1] < rHi4[1] and close[1] > rMid5[1]
+     and uwp[1] >= wickMin
+
+var float sl_A_L = na
+var float sl_A_S = na
+if swpL
+    sl_A_L := low[1]
+if swpS
+    sl_A_S := high[1]
+
+dispA_L = swpL and (close - low) / bR >= 0.55 and body >= 0.3 * bR
+dispA_S = swpS and (high - close)/ bR >= 0.55 and body >= 0.3 * bR
+
+// ─────────────────────────────────────────────────────────────────────────
+// STRATEGY B — Silver Bullet 2-Stage   (WR 67–83% pair-specific)
+// ─────────────────────────────────────────────────────────────────────────
+var float bfvg_lo  = na,  var float bfvg_hi  = na,  var int bfvg_bar  = -999
+var float sfvg_lo  = na,  var float sfvg_hi  = na,  var int sfvg_bar  = -999
+var int   sb1L_bar = -999, var float sb1L_sl  = na
+var int   sb1S_bar = -999, var float sb1S_sl  = na
+
+fgUp = low  - high[2]
+fgDn = low[2] - high
+
+if useSB and inSBw and fgUp > atr20 * fvgMult and h4h1ok and h4bull
+    bfvg_lo  := high[2]
+    bfvg_hi  := low
+    bfvg_bar := bar_index
+
+if useSB and inSBw and fgDn > atr20 * fvgMult and h4h1ok and not h4bull
+    sfvg_lo  := high
+    sfvg_hi  := low[2]
+    sfvg_bar := bar_index
+
+bfvgOK = bar_index - bfvg_bar <= 10 and bfvg_bar >= 0
+sfvgOK = bar_index - sfvg_bar <= 10 and sfvg_bar >= 0
+
+if bfvgOK and bar_index > bfvg_bar and inSBw
+    if low <= bfvg_hi and close >= bfvg_lo
+        sb1L_bar := bar_index
+        sb1L_sl  := bfvg_lo - (bfvg_hi - bfvg_lo) * 0.5
+        bfvg_bar := -999
+
+if sfvgOK and bar_index > sfvg_bar and inSBw
+    if high >= sfvg_lo and close <= sfvg_hi
+        sb1S_bar := bar_index
+        sb1S_sl  := sfvg_hi + (sfvg_hi - sfvg_lo) * 0.5
+        sfvg_bar := -999
+
+dispB_L = bar_index == sb1L_bar + 1 and (close - low) / bR >= 0.55 and body >= 0.25 * atr20
+dispB_S = bar_index == sb1S_bar + 1 and (high - close)/ bR >= 0.55 and body >= 0.25 * atr20
+
+// ─────────────────────────────────────────────────────────────────────────
+// STRATEGY C — ODR Asia Range Sweep   (WR 69–89% pair-specific)
+// ─────────────────────────────────────────────────────────────────────────
+newDay = ta.change(time("D")) != 0
+
+var float asiaH   = na,  var float asiaL   = na
+var float lockedH = na,  var float lockedL = na
+
+if newDay
+    asiaH := na
+    asiaL := na
+
+if inAsia
+    asiaH := na(asiaH) ? high : math.max(asiaH, high)
+    asiaL := na(asiaL) ? low  : math.min(asiaL, low)
+
+asiaJustEnded = not inAsia and inAsia[1]
+if asiaJustEnded and not na(asiaH)
+    lockedH := asiaH
+    lockedL := asiaL
+
+odrL = useODR and inLon and not na(lockedL) and h4bull
+     and low  < lockedL and close > lockedL and lwp >= 0.45
+
+odrS = useODR and inLon and not na(lockedH) and not h4bull
+     and high > lockedH and close < lockedH and uwp >= 0.45
+
+// ─────────────────────────────────────────────────────────────────────────
+// ENTRY FIRE
+// ─────────────────────────────────────────────────────────────────────────
+longFire  = (dispA_L or dispB_L or odrL) and strategy.position_size == 0
+shortFire = (dispA_S or dispB_S or odrS) and strategy.position_size == 0
+
+// ─── LONG ─────────────────────────────────────────────────────────────────
+if longFire
+    e   = close
+    sl  = dispA_L ? sl_A_L : dispB_L ? nz(sb1L_sl, low) : low
+    sl  := sl < e ? sl : e - atr20 * 0.5
+    rsk = e - sl
+    if rsk > 0 and rsk < e * 0.08
+        tp1  = e + rsk * 1.0
+        tp2  = e + rsk * 1.7
+        tp3  = e + rsk * 2.56
+        strat = dispA_L ? "30m Sweep" : dispB_L ? "Silver Bullet " + sbWinName : "ODR London"
+        wr    = dispA_L ? wr_30m      : dispB_L ? wr_SB2                       : wr_ODR
+
+        strategy.entry("Long",  strategy.long,
+             comment = strat + " | WR " + wr)
+        strategy.exit("L-T1", "Long", qty_percent=34,
+             limit=tp1, stop=sl, comment="T1 1R — move SL to BE")
+        strategy.exit("L-T2", "Long", qty_percent=50,
+             limit=tp2, stop=sl, comment="T2 1.7R")
+        strategy.exit("L-T3", "Long", qty_percent=100,
+             limit=tp3, stop=sl, comment="T3 2.56R")
+
+        label.new(bar_index, low - atr20 * 0.3,
+             "▲ LONG  |  " + strat + "  |  WR " + wr + "\n" +
+             "Entry : " + str.tostring(e,   format.mintick) + "\n" +
+             "SL    : " + str.tostring(sl,  format.mintick) + "  (−1R)\n" +
+             "T1    : " + str.tostring(tp1, format.mintick) + "  (+1R  · 34%)\n" +
+             "T2    : " + str.tostring(tp2, format.mintick) + "  (+1.7R · 33%)\n" +
+             "T3    : " + str.tostring(tp3, format.mintick) + "  (+2.56R · 33%)",
+             style     = label.style_label_up,
+             color     = color.new(color.lime, 10),
+             textcolor = color.black,
+             size      = size.small)
+
+// ─── SHORT ────────────────────────────────────────────────────────────────
+if shortFire
+    e   = close
+    sl  = dispA_S ? sl_A_S : dispB_S ? nz(sb1S_sl, high) : high
+    sl  := sl > e ? sl : e + atr20 * 0.5
+    rsk = sl - e
+    if rsk > 0 and rsk < e * 0.08
+        tp1  = e - rsk * 1.0
+        tp2  = e - rsk * 1.7
+        tp3  = e - rsk * 2.56
+        strat = dispA_S ? "30m Sweep" : dispB_S ? "Silver Bullet " + sbWinName : "ODR London"
+        wr    = dispA_S ? wr_30m      : dispB_S ? wr_SB2                       : wr_ODR
+
+        strategy.entry("Short", strategy.short,
+             comment = strat + " | WR " + wr)
+        strategy.exit("S-T1", "Short", qty_percent=34,
+             limit=tp1, stop=sl, comment="T1 1R — move SL to BE")
+        strategy.exit("S-T2", "Short", qty_percent=50,
+             limit=tp2, stop=sl, comment="T2 1.7R")
+        strategy.exit("S-T3", "Short", qty_percent=100,
+             limit=tp3, stop=sl, comment="T3 2.56R")
+
+        label.new(bar_index, high + atr20 * 0.3,
+             "▼ SHORT  |  " + strat + "  |  WR " + wr + "\n" +
+             "Entry : " + str.tostring(e,   format.mintick) + "\n" +
+             "SL    : " + str.tostring(sl,  format.mintick) + "  (+1R)\n" +
+             "T1    : " + str.tostring(tp1, format.mintick) + "  (−1R  · 34%)\n" +
+             "T2    : " + str.tostring(tp2, format.mintick) + "  (−1.7R · 33%)\n" +
+             "T3    : " + str.tostring(tp3, format.mintick) + "  (−2.56R · 33%)",
+             style     = label.style_label_down,
+             color     = color.new(color.red, 10),
+             textcolor = color.white,
+             size      = size.small)
+
+// ─── KILL ZONE BACKGROUNDS ────────────────────────────────────────────────
+bgcolor(showKZ and inLon ? color.new(#4CAF50,94) : na, title="London KZ")
+bgcolor(showKZ and inNY  ? color.new(#2196F3,94) : na, title="NY-AM KZ")
+bgcolor(showKZ and inSBw ? color.new(#9C27B0,91) : na, title="SB Window")
+
+// ─── EMA10 ────────────────────────────────────────────────────────────────
+plot(h1e, "EMA10 H1", color=color.new(color.yellow,55), linewidth=1)
+
+// ─── ASIA RANGE LINES (ODR reference) ─────────────────────────────────────
+var line aHL = na
+var line aLL = na
+if showAsia and asiaJustEnded and not na(lockedH)
+    if not na(aHL)
+        line.delete(aHL)
+        line.delete(aLL)
+    aHL := line.new(bar_index, lockedH, bar_index + 100, lockedH,
+         color=color.new(#FF9800,40), style=line.style_dashed, width=1, extend=extend.right)
+    aLL := line.new(bar_index, lockedL, bar_index + 100, lockedL,
+         color=color.new(#FF9800,40), style=line.style_dashed, width=1, extend=extend.right)
+
+// ─── BIAS TABLE ───────────────────────────────────────────────────────────
+if showBias and barstate.islast
+    t = table.new(position.top_right, 2, 5,
+         bgcolor=color.new(#111111,55), border_width=1, border_color=color.new(#444,0))
+    table.cell(t,0,0,"Bias",   text_color=color.gray, text_size=size.small)
+    table.cell(t,1,0,"",       text_color=color.gray, text_size=size.small)
+    table.cell(t,0,1,"D1",     text_color=color.white, text_size=size.small)
+    table.cell(t,1,1, d1bull ? "▲ BULL" : "▼ BEAR",
+         text_color=d1bull ? color.lime : color.red, text_size=size.small)
+    table.cell(t,0,2,"H4",     text_color=color.white, text_size=size.small)
+    table.cell(t,1,2, h4bull ? "▲ BULL" : "▼ BEAR",
+         text_color=h4bull ? color.lime : color.red, text_size=size.small)
+    table.cell(t,0,3,"H1",     text_color=color.white, text_size=size.small)
+    table.cell(t,1,3, h1bull ? "▲ BULL" : "▼ BEAR",
+         text_color=h1bull ? color.lime : color.red, text_size=size.small)
+    table.cell(t,0,4,"H4+H1",  text_color=color.white, text_size=size.small)
+    table.cell(t,1,4, h4h1ok  ? "✓ ALIGNED" : "✗ SPLIT",
+         text_color=h4h1ok ? color.lime : color.orange, text_size=size.small)
+
+// ─── SIGNAL DOTS (tiny markers above/below bars) ──────────────────────────
+plotshape(dispA_L, "30m Long",  shape.triangleup,   location.belowbar, color.new(color.lime,10),    size=size.small)
+plotshape(dispA_S, "30m Short", shape.triangledown, location.abovebar, color.new(color.red,10),     size=size.small)
+plotshape(dispB_L, "SB2 Long",  shape.triangleup,   location.belowbar, color.new(#9C27B0,10),       size=size.tiny)
+plotshape(dispB_S, "SB2 Short", shape.triangledown, location.abovebar, color.new(#9C27B0,10),       size=size.tiny)
+plotshape(odrL,    "ODR Long",  shape.circle,       location.belowbar, color.new(#FF9800,10),       size=size.tiny)
+plotshape(odrS,    "ODR Short", shape.circle,       location.abovebar, color.new(#FF9800,10),       size=size.tiny)
+
+// ─── ALERTS ───────────────────────────────────────────────────────────────
+alertcondition(longFire,  "FedForex Long",        "FedForex: LONG entry — check label for SL/TP")
+alertcondition(shortFire, "FedForex Short",       "FedForex: SHORT entry — check label for SL/TP")
+alertcondition(swpL,      "Stage-1 Sweep Long",   "FedForex: Stage-1 sweep long — watch next bar")
+alertcondition(swpS,      "Stage-1 Sweep Short",  "FedForex: Stage-1 sweep short — watch next bar")

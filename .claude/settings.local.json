@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /c/Users/DESKTOP/replay-journal && ls -la && echo \"---STRUCTURE---\" && find . -type d -not -path '*/node_modules/*' -not -path '*/.git/*' -maxdepth 3 2>/dev/null | sort)",
+      "Bash(curl -s __TRACKED_VAR__/rest/v1/replay_trades?select=id -H 'apikey: __TRACKED_VAR__' -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Prefer: count=exact' -H 'Range: 0-0' -D - -o /dev/null)"
+    ]
+  }
+}

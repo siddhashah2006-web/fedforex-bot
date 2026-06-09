@@ -1,0 +1,83 @@
+{
+  "lastReviewTotal": 0,
+  "reviewCount": 2,
+  "bestParams": {
+    "Sweep": {
+      "wickMin": 0.55,
+      "dispMin": 0.3
+    },
+    "SB2": {
+      "fvgMult": 0.15,
+      "dispMin": 0.25
+    },
+    "ODR": {
+      "wickMin": 0.45,
+      "rangeFilter": 0.9
+    }
+  },
+  "lastBT": {
+    "SB2": {
+      "GBPJPY": {
+        "n": 6,
+        "decided": 6,
+        "wins": 5,
+        "wr": 83,
+        "avgR": 0.78
+      },
+      "EURUSD": {
+        "n": 21,
+        "decided": 20,
+        "wins": 15,
+        "wr": 75,
+        "avgR": 0.53
+      },
+      "ETHUSD": {
+        "n": 8,
+        "decided": 8,
+        "wins": 6,
+        "wr": 75,
+        "avgR": 0.59
+      },
+      "EURJPY": {
+        "n": 6,
+        "decided": 6,
+        "wins": 4,
+        "wr": 67,
+        "avgR": 0.33
+      }
+    },
+    "ODR": {
+      "ETHUSD": {
+        "n": 11,
+        "decided": 11,
+        "wins": 10,
+        "wr": 91,
+        "avgR": 1.43
+      },
+      "EURUSD": {
+        "n": 5,
+        "decided": 5,
+        "wins": 4,
+        "wr": 80,
+        "avgR": 0.6
+      },
+      "GBPUSD": {
+        "n": 13,
+        "decided": 13,
+        "wins": 9,
+        "wr": 69,
+        "avgR": 0.73
+      }
+    },
+    "Sweep": {
+      "overall": {
+        "n": 14,
+        "decided": 13,
+        "wins": 10,
+        "wr": 77,
+        "avgR": 0.77
+      }
+    }
+  },
+  "lastRunAt": "2026-06-09T18:08:29.918Z"
+}

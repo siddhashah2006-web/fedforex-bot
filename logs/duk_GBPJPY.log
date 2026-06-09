@@ -1,0 +1,10 @@
+
+=== fetch_dukascopy.js ===
+Instruments: GBPJPY
+Date range: 2018–2022
+Output: C:/Users/DESKTOP/Desktop/Claude Code/bt_data_1h/
+
+Trading days to check: 1305 per instrument
+
+
+[GBPJPY] fetching 1305 days... 

@@ -1,0 +1,16 @@
+
+=== fetch_dukascopy.js ===
+Instruments: BTCUSD
+Date range: 2019–2021
+Output: C:/Users/DESKTOP/Desktop/Claude Code/bt_data_1h/
+
+Trading days to check: 784 per instrument
+Outputs: bt_data_1h/ (1H bars) + bt_data_m15/ (15-min bars)
+
+
+[BTCUSD] fetching 784 days (1H + M15)...  [saved 50] [saved 100] [saved 150] [saved 200] [saved 250] [saved 300] [saved 350] [saved 400] [saved 450] [saved 500] [saved 550] [saved 600] [saved 650] [saved 700] [saved 750]done. downloaded=776 skipped=0 errors=0
+  → 1H:  BTCUSD.json: 24864 bars  (2019-01-01 → 2022-12-30) [+18624 new]
+  → M15: BTCUSD.json: 74496 bars
+
+=== Complete ===
+New files are in bt_data_1h/ and ready for backtest16/17.

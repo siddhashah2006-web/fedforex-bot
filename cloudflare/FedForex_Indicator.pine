@@ -1,0 +1,263 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Fed Forex — ICT Master Indicator  v1.0
+// For TradingView (Pine Script v5)
+// ═══════════════════════════════════════════════════════════════════════
+// What it shows:
+//   • 4H and Daily OB / FVG / IFVG zones (coloured boxes)
+//   • Kill Zone background shading (London, NY-AM, Silver Bullet windows)
+//   • HTF Bias dashboard (D1 / H4 / H1 trend via EMA10)
+//   • 30m Sweep detection: arrow on sweep wick bar
+//   • 30m Displacement: arrow on confirmation bar → entry signal
+//   • Silver Bullet FVG detection (3 windows)
+//   • ODR: Asia range lines + London sweep marker
+//   • Alerts for all signals
+// ═══════════════════════════════════════════════════════════════════════
+//@version=5
+indicator("Fed Forex — ICT Master", shorttitle="FedForex", overlay=true, max_boxes_count=200, max_lines_count=200, max_labels_count=200)
+
+// ─── SETTINGS ────────────────────────────────────────────────────────────
+grp_htf  = "HTF Zones"
+grp_kz   = "Kill Zones"
+grp_bias = "Bias Dashboard"
+grp_sw   = "30m Sweep"
+grp_sb   = "Silver Bullet"
+grp_odr  = "ODR (Asia Range)"
+
+show4hZones  = input.bool(true,  "Show 4H Zones",   group=grp_htf)
+showD1Zones  = input.bool(true,  "Show Daily Zones", group=grp_htf)
+zoneLen      = input.int(40,     "Zone extend (bars)",minval=5,maxval=200, group=grp_htf)
+obColor      = input.color(color.new(#2196F3,80), "OB colour",   group=grp_htf)
+fvgColor     = input.color(color.new(#FF9800,80), "FVG colour",  group=grp_htf)
+ifvgColor    = input.color(color.new(#9C27B0,80), "IFVG colour", group=grp_htf)
+
+showLondon   = input.bool(true,  "London KZ (07:00–10:30 IST)",  group=grp_kz)
+showNYAM     = input.bool(true,  "NY-AM KZ  (15:30–18:00 IST)",  group=grp_kz)
+showSBwins   = input.bool(true,  "Silver Bullet windows",          group=grp_kz)
+londonCol    = input.color(color.new(#4CAF50,92), "London colour",   group=grp_kz)
+nyamCol      = input.color(color.new(#2196F3,92), "NY-AM colour",    group=grp_kz)
+sbCol        = input.color(color.new(#9C27B0,90), "SB window colour",group=grp_kz)
+
+showBias     = input.bool(true,  "Show Bias Table", group=grp_bias)
+emaPeriod    = input.int(10,     "EMA period",      group=grp_bias)
+
+showSweep    = input.bool(true,  "Show sweep arrows",      group=grp_sw)
+showDisp     = input.bool(true,  "Show displacement entry", group=grp_sw)
+wickMin      = input.float(0.55, "Min wick ratio",step=0.05, group=grp_sw)
+
+showSBfvg    = input.bool(true,  "Show Silver Bullet FVGs", group=grp_sb)
+
+showODR      = input.bool(true,  "Show Asia range",        group=grp_odr)
+showODRswp   = input.bool(true,  "Show ODR sweep marker",  group=grp_odr)
+
+// ─── TIME UTILITIES ────────────────────────────────────────────────────────
+// All times in IST (UTC+5:30). Pine uses exchange time. We work in UTC minutes.
+utcHour = hour(time, "UTC")
+utcMin  = minute(time, "UTC")
+totalMinUTC = utcHour * 60 + utcMin
+// Convert to IST minutes from midnight IST
+istMin  = totalMinUTC + 330  // +5h30m = +330 min
+
+// Kill Zone windows (IST minutes)
+inLondon    = istMin >= 420  and istMin < 630   // 07:00–10:30 IST
+inNYAM      = istMin >= 930  and istMin < 1080  // 15:30–18:00 IST
+inSBwin1    = istMin >= 450  and istMin <= 570   // 07:30–09:30 (SB W1)
+inSBwin2    = istMin >= 930  and istMin <= 990   // 15:30–16:30 (SB W2)
+inSBwin3    = istMin >= 1170 and istMin <= 1230  // 19:30–20:30 (SB W3)
+inAnySB     = inSBwin1 or inSBwin2 or inSBwin3
+
+// ─── BACKGROUND SHADING (Kill Zones) ──────────────────────────────────────
+bgcolor(showLondon and inLondon and not inSBwin1  ? londonCol : na, title="London KZ")
+bgcolor(showNYAM   and inNYAM   and not inSBwin2  ? nyamCol   : na, title="NY-AM KZ")
+bgcolor(showSBwins and inAnySB                    ? sbCol      : na, title="SB Window")
+
+// ─── EMA-BASED TREND (reusable) ───────────────────────────────────────────
+ema10 = ta.ema(close, emaPeriod)
+isAboveEma = close >= ema10
+
+// HTF data via request.security
+[h4_close, h4_ema] = request.security(syminfo.tickerid, "240",  [close, ta.ema(close, emaPeriod)], lookahead=barmerge.lookahead_off)
+[d1_close, d1_ema] = request.security(syminfo.tickerid, "D",    [close, ta.ema(close, emaPeriod)], lookahead=barmerge.lookahead_off)
+[wk_close, wk_ema] = request.security(syminfo.tickerid, "W",    [close, ta.ema(close, emaPeriod)], lookahead=barmerge.lookahead_off)
+
+h4_bull = h4_close >= h4_ema
+d1_bull = d1_close >= d1_ema
+wk_bull = wk_close >= wk_ema
+h1_bull = close    >= ema10
+
+// Alignment
+h4h1_aligned = h4_bull == h1_bull
+all3_aligned = d1_bull == h4_bull and h4_bull == h1_bull
+
+// ─── BIAS DASHBOARD ───────────────────────────────────────────────────────
+if showBias and barstate.islast
+    // Position: top-right
+    tbl = table.new(position.top_right, 2, 5, bgcolor=color.new(#000000,60), border_width=1, border_color=color.new(#555555,0))
+    table.cell(tbl,0,0,"Timeframe",text_color=color.gray, text_size=size.small)
+    table.cell(tbl,1,0,"Bias",     text_color=color.gray, text_size=size.small)
+    table.cell(tbl,0,1,"Weekly",   text_color=color.white,text_size=size.small)
+    table.cell(tbl,1,1,wk_bull?"▲ BULL":"▼ BEAR", text_color=wk_bull?color.lime:color.red, text_size=size.small)
+    table.cell(tbl,0,2,"Daily",    text_color=color.white,text_size=size.small)
+    table.cell(tbl,1,2,d1_bull?"▲ BULL":"▼ BEAR", text_color=d1_bull?color.lime:color.red, text_size=size.small)
+    table.cell(tbl,0,3,"H4",       text_color=color.white,text_size=size.small)
+    table.cell(tbl,1,3,h4_bull?"▲ BULL":"▼ BEAR", text_color=h4_bull?color.lime:color.red, text_size=size.small)
+    table.cell(tbl,0,4,"H1",       text_color=color.white,text_size=size.small)
+    table.cell(tbl,1,4,h1_bull?"▲ BULL":"▼ BEAR", text_color=h1_bull?color.lime:color.red, text_size=size.small)
+
+// ─── HTF ZONES (4H and Daily OB / FVG / IFVG) ────────────────────────────
+// We pull 4H and Daily OHLC via request.security and detect zones on those bars.
+
+[h4_o,h4_h,h4_l,h4_c] = request.security(syminfo.tickerid,"240",[open,high,low,close],lookahead=barmerge.lookahead_off)
+[d1_o,d1_h,d1_l,d1_c] = request.security(syminfo.tickerid,"D",  [open,high,low,close],lookahead=barmerge.lookahead_off)
+
+// Detect zone changes on 4H bars (new 4H bar = new zone candidate)
+h4_newbar   = ta.change(time("240"))  != 0
+d1_newbar   = ta.change(time("D"))    != 0
+
+// ── 4H OB detection ──
+// Bearish OB (bull candle before bearish break): h4[1].c > h4[1].o && h4.c < h4[1].l
+h4_bearOB = show4hZones and h4_newbar and h4_c[1]>h4_o[1] and h4_c<h4_l[1]
+h4_bullOB = show4hZones and h4_newbar and h4_c[1]<h4_o[1] and h4_c>h4_h[1]
+
+// ── 4H FVG detection ──
+// Bearish FVG: bar[0].h < bar[2].l (gap down)
+// Bullish FVG: bar[0].l > bar[2].h (gap up)
+h4_bullFVG = show4hZones and h4_newbar and h4_l>h4_h[2]
+h4_bearFVG = show4hZones and h4_newbar and h4_h<h4_l[2]
+
+// ── Daily OB detection ──
+d1_bearOB = showD1Zones and d1_newbar and d1_c[1]>d1_o[1] and d1_c<d1_l[1]
+d1_bullOB = showD1Zones and d1_newbar and d1_c[1]<d1_o[1] and d1_c>d1_h[1]
+
+// ── Daily FVG detection ──
+d1_bullFVG = showD1Zones and d1_newbar and d1_l>d1_h[2]
+d1_bearFVG = showD1Zones and d1_newbar and d1_h<d1_l[2]
+
+// Draw zone boxes
+// 4H OBs
+if h4_bearOB
+    box.new(bar_index-1, h4_h[1], bar_index+zoneLen, h4_l[1], border_color=obColor, bgcolor=obColor, text="4H OB ▼", text_color=color.new(#2196F3,20), text_size=size.tiny)
+if h4_bullOB
+    box.new(bar_index-1, h4_h[1], bar_index+zoneLen, h4_l[1], border_color=obColor, bgcolor=obColor, text="4H OB ▲", text_color=color.new(#2196F3,20), text_size=size.tiny)
+
+// 4H FVGs
+if h4_bullFVG
+    box.new(bar_index, h4_l, bar_index+zoneLen, h4_h[2], border_color=fvgColor, bgcolor=fvgColor, text="4H FVG ▲", text_color=color.new(#FF9800,20), text_size=size.tiny)
+if h4_bearFVG
+    box.new(bar_index, h4_h, bar_index+zoneLen, h4_l[2], border_color=fvgColor, bgcolor=fvgColor, text="4H FVG ▼", text_color=color.new(#FF9800,20), text_size=size.tiny)
+
+// Daily OBs
+if d1_bearOB
+    box.new(bar_index-1, d1_h[1], bar_index+zoneLen, d1_l[1], border_color=color.new(#2196F3,60), bgcolor=color.new(#2196F3,75), text="D1 OB ▼", text_color=color.new(#2196F3,10), text_size=size.tiny)
+if d1_bullOB
+    box.new(bar_index-1, d1_h[1], bar_index+zoneLen, d1_l[1], border_color=color.new(#2196F3,60), bgcolor=color.new(#2196F3,75), text="D1 OB ▲", text_color=color.new(#2196F3,10), text_size=size.tiny)
+
+// Daily FVGs
+if d1_bullFVG
+    box.new(bar_index, d1_l, bar_index+zoneLen, d1_h[2], border_color=color.new(#FF9800,60), bgcolor=color.new(#FF9800,75), text="D1 FVG ▲", text_color=color.new(#FF9800,10), text_size=size.tiny)
+if d1_bearFVG
+    box.new(bar_index, d1_h, bar_index+zoneLen, d1_l[2], border_color=color.new(#FF9800,60), bgcolor=color.new(#FF9800,75), text="D1 FVG ▼", text_color=color.new(#FF9800,10), text_size=size.tiny)
+
+// ─── 30m SWEEP + DISPLACEMENT DETECTION ──────────────────────────────────
+// Works on any chart TF but tuned for 30m chart.
+// Sweep: wick >= wickMin, close back inside range, H4+H1 aligned
+// Displacement: next bar closes strongly in direction
+
+barRange     = high - low
+bodySize     = math.abs(close - open)
+upperWick    = high  - math.max(open,close)
+lowerWick    = math.min(open,close) - low
+wickRatioUp  = barRange > 0 ? lowerWick  / barRange : 0  // sweep low = long wick down
+wickRatioDown= barRange > 0 ? upperWick  / barRange : 0  // sweep high = long wick up
+
+// Recent range (4 bars)
+recentHigh4  = ta.highest(high[1],4)
+recentLow4   = ta.lowest(low[1],4)
+recentMid    = (ta.highest(high[1],5)+ta.lowest(low[1],5))/2  // equilibrium
+
+// Sweep conditions
+longSetup  = h4h1_aligned and h4_bull  and low[1]  < recentLow4[1]  and close[1] > recentLow4[1]  and close[1] < recentMid[1] and wickRatioUp[1]  >= wickMin
+shortSetup = h4h1_aligned and not h4_bull and high[1] > recentHigh4[1] and close[1] < recentHigh4[1] and close[1] > recentMid[1] and wickRatioDown[1] >= wickMin
+
+// Displacement bar: previous sweep + this bar confirms
+dispRatio    = barRange > 0 ? (close - low) / barRange : 0   // for long
+dispRatioS   = barRange > 0 ? (high - close)/ barRange : 0   // for short
+
+longEntry  = showDisp and longSetup[1]  and dispRatio  >= 0.55 and bodySize >= 0.3*barRange
+shortEntry = showDisp and shortSetup[1] and dispRatioS >= 0.55 and bodySize >= 0.3*barRange
+
+// Plot sweep arrows (on sweep bar)
+plotshape(showSweep and longSetup,  title="Sweep Long",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime,30),  size=size.small, text="SWPL")
+plotshape(showSweep and shortSetup, title="Sweep Short", style=shape.triangledown, location=location.abovebar, color=color.new(color.red,30),   size=size.small, text="SWPS")
+
+// Plot entry arrows (on displacement bar)
+plotshape(longEntry,  title="Entry Long",  style=shape.labelup,   location=location.belowbar, color=color.lime,        size=size.normal, text="▲ ENTRY")
+plotshape(shortEntry, title="Entry Short", style=shape.labeldown, location=location.abovebar, color=color.red,         size=size.normal, text="▼ ENTRY")
+
+// ─── SILVER BULLET FVG DETECTION ──────────────────────────────────────────
+// Detects FVGs formed within the 3 SB windows and marks them
+sbBullFVG = showSBfvg and inAnySB[2] and low > high[2] and h4h1_aligned and h4_bull
+sbBearFVG = showSBfvg and inAnySB[2] and high < low[2] and h4h1_aligned and not h4_bull
+
+// Draw FVG box for Silver Bullet
+if sbBullFVG
+    box.new(bar_index-2, high[2], bar_index+10, low, border_color=ifvgColor, bgcolor=color.new(#9C27B0,85), text="SB FVG ▲", text_color=color.new(#9C27B0,20), text_size=size.tiny)
+if sbBearFVG
+    box.new(bar_index-2, low[2],  bar_index+10, high, border_color=ifvgColor, bgcolor=color.new(#9C27B0,85), text="SB FVG ▼", text_color=color.new(#9C27B0,20), text_size=size.tiny)
+
+// ─── ODR — ASIA RANGE ─────────────────────────────────────────────────────
+// Asia session: 00:30–05:30 IST = UTC 19:00–00:00 (prev day)
+// We track the day's Asia high/low
+inAsia    = istMin >= 30 and istMin <= 330
+newDay    = ta.change(time("D")) != 0
+
+var float asiaHighV = na
+var float asiaLowV  = na
+var float asiaHighD = na  // locked at end of Asia
+var float asiaLowD  = na
+
+// Reset at start of each day
+if newDay
+    asiaHighV := na
+    asiaLowV  := na
+
+// Accumulate Asia range
+if inAsia
+    asiaHighV := na(asiaHighV) ? high : math.max(asiaHighV, high)
+    asiaLowV  := na(asiaLowV)  ? low  : math.min(asiaLowV,  low)
+
+// Lock Asia range at end of Asia window (first bar in London that is not Asia)
+asiaJustEnded = not inAsia and inAsia[1]
+if asiaJustEnded
+    asiaHighD := asiaHighV
+    asiaLowD  := asiaLowV
+
+// Draw Asia range lines
+var line asiaHighLine = na
+var line asiaLowLine  = na
+if showODR and asiaJustEnded and not na(asiaHighD)
+    if not na(asiaHighLine)
+        line.delete(asiaHighLine)
+        line.delete(asiaLowLine)
+    asiaHighLine := line.new(bar_index, asiaHighD, bar_index+80, asiaHighD, color=color.new(#FF9800,40), style=line.style_dashed, width=1)
+    asiaLowLine  := line.new(bar_index, asiaLowD,  bar_index+80, asiaLowD,  color=color.new(#FF9800,40), style=line.style_dashed, width=1)
+
+// ODR Sweep: London sweeps Asia high/low with wick
+odrLongSweep  = showODRswp and inLondon and not na(asiaLowD)  and low  < asiaLowD  and close > asiaLowD  and h4_bull    and wickRatioUp  >= 0.45
+odrShortSweep = showODRswp and inLondon and not na(asiaHighD) and high > asiaHighD and close < asiaHighD and not h4_bull and wickRatioDown >= 0.45
+
+plotshape(odrLongSweep,  title="ODR Sweep Long",  style=shape.circle, location=location.belowbar, color=color.new(#FF9800,20), size=size.small, text="ODR")
+plotshape(odrShortSweep, title="ODR Sweep Short", style=shape.circle, location=location.abovebar, color=color.new(#FF9800,20), size=size.small, text="ODR")
+
+// ─── EMA10 LINE ───────────────────────────────────────────────────────────
+plot(ema10, "EMA10", color=color.new(color.yellow,40), linewidth=1)
+
+// ─── ALERT CONDITIONS ─────────────────────────────────────────────────────
+alertcondition(longEntry,      "30m Sweep Entry LONG",   "FedForex: 30m sweep entry LONG — check kill zone + SL below sweep low")
+alertcondition(shortEntry,     "30m Sweep Entry SHORT",  "FedForex: 30m sweep entry SHORT — check kill zone + SL above sweep high")
+alertcondition(longSetup,      "30m Sweep Stage-1 LONG", "FedForex: Stage 1 sweep LONG — watch next bar for displacement")
+alertcondition(shortSetup,     "30m Sweep Stage-1 SHORT","FedForex: Stage 1 sweep SHORT — watch next bar for displacement")
+alertcondition(sbBullFVG,      "SB FVG Bullish",         "FedForex: Silver Bullet bullish FVG formed in window")
+alertcondition(sbBearFVG,      "SB FVG Bearish",         "FedForex: Silver Bullet bearish FVG formed in window")
+alertcondition(odrLongSweep,   "ODR Sweep LONG",         "FedForex: ODR — London swept Asia low, bullish setup")
+alertcondition(odrShortSweep,  "ODR Sweep SHORT",        "FedForex: ODR — London swept Asia high, bearish setup")
+alertcondition(longEntry  or shortEntry, "Any Entry Signal", "FedForex: Entry signal — check chart")

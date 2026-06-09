@@ -1,0 +1,16 @@
+
+=== fetch_dukascopy.js ===
+Instruments: USDJPY
+Date range: 2020–2026
+Output: C:/Users/DESKTOP/Desktop/Claude Code/bt_data_1h/
+
+Trading days to check: 1679 per instrument
+Outputs: bt_data_1h/ (1H bars) + bt_data_m15/ (15-min bars)
+
+
+[USDJPY] fetching 1679 days (1H + M15)...  [saved 50] [saved 100] [saved 150] [saved 200] [saved 250] [saved 300] [saved 350] [saved 400] [saved 450] [saved 500] [saved 550] [saved 600] [saved 650] [saved 700] [saved 750] [saved 800] [saved 850] [saved 900] [saved 950] [saved 1000] [saved 1050] [saved 1100] [saved 1150] [saved 1200] [saved 1250] [saved 1300] [saved 1350] [saved 1400] [saved 1450] [saved 1500] [saved 1550] [saved 1600] [saved 1650]done. downloaded=1677 skipped=0 errors=0
+  → 1H:  USDJPY.json: 40367 bars  (2020-01-01 → 2026-06-08) [+4610 new]
+  → M15: USDJPY.json: 160992 bars
+
+=== Complete ===
+New files are in bt_data_1h/ and ready for backtest16/17.

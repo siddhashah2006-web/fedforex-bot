@@ -1,0 +1,16 @@
+
+=== fetch_dukascopy.js ===
+Instruments: EURUSD
+Date range: 2020–2026
+Output: C:/Users/DESKTOP/Desktop/Claude Code/bt_data_1h/
+
+Trading days to check: 1679 per instrument
+Outputs: bt_data_1h/ (1H bars) + bt_data_m15/ (15-min bars)
+
+
+[EURUSD] fetching 1679 days (1H + M15)...  [saved 50] [saved 100] [saved 150]done. downloaded=171 skipped=1506 errors=0
+  → 1H:  EURUSD.json: 40175 bars  (2020-01-01 → 2026-06-08) [+4046 new]
+  → M15: EURUSD.json: 16416 bars
+
+=== Complete ===
+New files are in bt_data_1h/ and ready for backtest16/17.

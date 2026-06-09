@@ -1,0 +1,39 @@
+name: Fed Forex — Nightly Strategy Review
+
+on:
+  schedule:
+    - cron: '30 20 * * 1-5'   # 2:00 AM IST Mon–Fri (20:30 UTC)
+  workflow_dispatch:            # also lets you trigger manually from GitHub UI
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run strategy review
+        working-directory: cloudflare
+        env:
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          TG_TOKEN:      ${{ secrets.TG_TOKEN }}
+          TG_CHAT:       ${{ secrets.TG_CHAT }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN:  ${{ secrets.CF_API_TOKEN }}
+          CF_KV_NS_ID:   ${{ secrets.CF_KV_NS_ID }}
+        run: node review_strategy.js
+
+      - name: Save updated state
+        run: |
+          git config user.name  "FedForex Bot"
+          git config user.email "bot@fedforex"
+          git add cloudflare/review_state.json
+          git diff --staged --quiet || git commit -m "chore: update review_state after nightly run"
+          git push
