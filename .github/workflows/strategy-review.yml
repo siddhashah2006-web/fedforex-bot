@@ -1,9 +1,9 @@
-name: Fed Forex — Nightly Strategy Review
+name: FedForex Nightly Strategy Review
 
 on:
   schedule:
-    - cron: '30 20 * * 1-5'   # 2:00 AM IST Mon–Fri (20:30 UTC)
-  workflow_dispatch:            # also lets you trigger manually from GitHub UI
+    - cron: '30 20 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   review:
@@ -32,7 +32,7 @@ jobs:
 
       - name: Save updated state
         run: |
-          git config user.name  "FedForex Bot"
+          git config user.name "FedForex Bot"
           git config user.email "bot@fedforex"
           git add cloudflare/review_state.json
           git diff --staged --quiet || git commit -m "chore: update review_state after nightly run"
