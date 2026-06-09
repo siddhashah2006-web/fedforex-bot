@@ -1,6 +1,6 @@
 {
-  "lastReviewTotal": 0,
-  "reviewCount": 2,
+  "lastReviewTotal": 63,
+  "reviewCount": 3,
   "bestParams": {
     "Sweep": {
       "wickMin": 0.55,
@@ -79,5 +79,5 @@
       }
     }
   },
-  "lastRunAt": "2026-06-09T18:08:29.918Z"
+  "lastRunAt": "2026-06-09T18:59:17.357Z"
 }
